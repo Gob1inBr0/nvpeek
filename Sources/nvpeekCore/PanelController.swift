@@ -35,6 +35,7 @@ public final class PanelController {
     private let panel: NonActivatingPanel
     private var settingsWindow: NSWindow?
     private var changeCancellable: AnyCancellable?
+    private var eventMonitor: Any?
     private var appliedMode: DisplayMode?
     private var appliedHotKey: HotKeyId?
 
@@ -56,7 +57,8 @@ public final class PanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.isMovableByWindowBackground = true
+        // 拖动统一走下面的本地事件监视器，这里关掉系统按背景拖动，避免两条通道打架
+        panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
 
@@ -70,6 +72,22 @@ public final class PanelController {
             })
         let hosting = MovableHostingView(rootView: root)
         panel.contentView = hosting
+
+        // 拖动窗口：本地事件监视器在事件到达任何视图之前就能看到，
+        // 不依赖 SwiftUI 是否转发（实测 NSHostingView 会吞掉背后把手的事件）。
+        // 规则：按下位置在窗口顶部条带、且不在右侧按钮区 → 执行系统窗口拖动。
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, event.window === self.panel,
+                  let content = self.panel.contentView else { return event }
+            let p = content.convert(event.locationInWindow, from: nil)
+            let inTopStrip = p.y >= content.bounds.height - 40
+            let inButtonZone = p.x >= content.bounds.width - 150
+            if inTopStrip && !inButtonZone {
+                self.panel.performDrag(with: event)
+                return nil   // 吃掉这个按下事件，避免 SwiftUI 又当点击处理
+            }
+            return event
+        }
 
         applyDisplayModeIfNeeded()
         applyHotKeyIfNeeded()
