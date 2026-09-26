@@ -9,19 +9,6 @@ struct PanelContentHeightKey: PreferenceKey {
     }
 }
 
-/// 用系统原生方式拖动窗口的把手：比 SwiftUI 手势跟手，不会有黏滞感
-struct DragHandle: NSViewRepresentable {
-    func makeNSView(context: Context) -> HandleView { HandleView() }
-    func updateNSView(_ view: HandleView, context: Context) {}
-
-    final class HandleView: NSView {
-        override func mouseDown(with event: NSEvent) {
-            window?.performDrag(with: event)
-        }
-        override var mouseDownCanMoveWindow: Bool { true }
-    }
-}
-
 public struct PanelView: View {
     @ObservedObject var store: MonitorStore
     var onOpenSettings: () -> Void
@@ -97,7 +84,6 @@ public struct PanelView: View {
         }
         .padding(.horizontal, 2)
         .contentShape(Rectangle())
-        .background(DragHandle())
     }
 
     // MARK: - 迷你小条：只显示每台机器的空闲卡数，点一下展开
@@ -120,7 +106,6 @@ public struct PanelView: View {
         }
         .padding(.horizontal, 4)
         .contentShape(Rectangle())
-        .background(DragHandle())
         .onTapGesture { store.setCollapsed(false) }
     }
 

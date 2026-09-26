@@ -8,6 +8,27 @@ final class NonActivatingPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
+/// 能拖动窗口的宿主视图。NSHostingView 会拦下鼠标事件，藏在它背后的把手视图
+/// 收不到按下事件；所以在它自己的 mouseDown 里分流：点在标题栏条带
+/// （右侧按钮区除外）就执行系统窗口拖动，其余位置照常交给 SwiftUI 处理。
+final class MovableHostingView: NSHostingView<PanelView> {
+    /// 标题栏条带高度（展开态标题行和迷你条都在窗口顶部）
+    private let dragStripHeight: CGFloat = 40
+    /// 右侧按钮区宽度，这个范围里不拖动，留给按钮点击
+    private let buttonZoneWidth: CGFloat = 150
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let inTopStrip = point.y >= bounds.height - dragStripHeight
+        let inButtonZone = point.x >= bounds.width - buttonZoneWidth
+        if inTopStrip && !inButtonZone, let window = window {
+            window.performDrag(with: event)
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+}
+
 @MainActor
 public final class PanelController {
     private let store: MonitorStore
@@ -47,7 +68,7 @@ public final class PanelController {
             onContentHeight: { [weak self] height in
                 self?.resizePanel(toContentHeight: height)
             })
-        let hosting = NSHostingView(rootView: root)
+        let hosting = MovableHostingView(rootView: root)
         panel.contentView = hosting
 
         applyDisplayModeIfNeeded()
