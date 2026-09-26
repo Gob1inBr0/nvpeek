@@ -75,6 +75,17 @@ public final class PanelController {
         maybeSnapshotForDebug()
     }
 
+    /// 顶栏菜单和全局快捷键共用：整个小组件隐藏/显示
+    public var isPanelVisible: Bool { panel.isVisible }
+
+    public func toggleVisible() {
+        if panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
+    }
+
     /// 调试用：设置环境变量 NVPEEK_SNAPSHOT=/path/to.png，
     /// 程序显示 2.5 秒后把自己的窗口存成图片，然后退出。截自己的窗口不需要屏幕录制权限。
     private func maybeSnapshotForDebug() {
@@ -192,19 +203,10 @@ public final class PanelController {
         appliedHotKey = key
         if let key {
             HotKeyCenter.shared.register(keyCode: key.keyCode, modifiers: key.modifiers) { [weak self] in
-                self?.toggleHidden()
+                self?.toggleVisible()
             }
         } else {
             HotKeyCenter.shared.unregister()
-        }
-    }
-
-    /// 快捷键：整个小组件隐藏/显示
-    private func toggleHidden() {
-        if panel.isVisible {
-            panel.orderOut(nil)
-        } else {
-            panel.orderFrontRegardless()
         }
     }
 

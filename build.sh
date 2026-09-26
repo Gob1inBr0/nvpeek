@@ -26,9 +26,10 @@ swiftc -sdk "$SDK" -o /tmp/nvpeek_verify \
 echo "==> 打包…"
 APP="build/nvpeek.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/nvpeek "$APP/Contents/MacOS/nvpeek"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # 本地临时签名（不发布 App Store 也需要）
 codesign --force --sign - "$APP"

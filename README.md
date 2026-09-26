@@ -6,6 +6,8 @@
 
 ## 功能
 
+- **顶栏常驻小图标**：菜单栏里有一个 GPU 小图标（绿点=至少一台在线），点开就是全部操作：
+  显示/隐藏小组件、收起/展开迷你条、立即刷新、切换钉桌面/悬浮、设置、退出
 - **直接导入 ~/.ssh/config 里的服务器**：设置里自动列出你 ssh 配置里的所有主机，
   勾选后一键导入，不用手动抄地址；导入后按别名连接，配置里的地址、端口、密钥、
   跳板机全部自动生效
@@ -108,6 +110,9 @@ nvidia-smi 就能用。个别驱动上普通用户看不到别人进程的显存
 nvpeek/
 ├── Package.swift               # Swift Package 定义
 ├── build.sh                    # 一键编译 + 打包成 .app
+├── make_icon.py                # 生成 App 图标（Python + Pillow）
+├── Resources/AppIcon_1024.png  # 图标母版（1024px）
+├── Resources/AppIcon.icns      # macOS 应用图标
 ├── Sources/
 │   ├── nvpeekExec/             # 程序入口
 │   └── nvpeekCore/             # 界面、SSH 轮询、解析、存储
@@ -116,6 +121,7 @@ nvpeek/
 │       ├── SSHConfig.swift     # ~/.ssh/config 解析
 │       ├── SSHRunner.swift     # ssh 调用和远端命令
 │       ├── MonitorStore.swift  # 轮询调度和状态
+│       ├── AppDelegate.swift   # 程序入口、顶栏状态栏图标和菜单
 │       ├── HotKey.swift        # 全局快捷键（Carbon 热键）
 │       ├── PanelController.swift  # 悬浮窗口管理
 │       ├── PanelView.swift     # 小组件界面
