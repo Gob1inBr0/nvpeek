@@ -23,6 +23,11 @@ public final class PanelController {
     private let panel: NonActivatingPanel
     private var settingsWindow: NSWindow?
     private var changeCancellable: AnyCancellable?
+    private var eventMonitor: Any?
+    // 手动拖动状态：非 nil 表示正在拖
+    private var dragStartMouse: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
+    private let debugLog = ProcessInfo.processInfo.environment["NVPEEK_DEBUG"] == "1"
     private var appliedMode: DisplayMode?
     private var appliedHotKey: HotKeyId?
 
@@ -60,15 +65,29 @@ public final class PanelController {
         let hosting = MovableHostingView(rootView: root)
         panel.contentView = hosting
 
+        // 独立拖动通道 1：本地事件监视器（在事件总线层面，不依赖任何视图转发）。
+        // 只负责标题栏条带；窗口其他区域交给 SwiftUI 的 WindowDragGesture。
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            guard let self else { return event }
+            return self.handleMouseEvent(event)
+        }
+
         applyDisplayModeIfNeeded()
         applyHotKeyIfNeeded()
         positionPanel()
 
-        // 显示方式、快捷键设置变化时立即生效
+        // 独立拖动通道 2 的维护 + 显示设置生效：AppKit 会缓存窗口"可拖动区域"，
+        // 而本程序界面每几秒刷新一次，缓存容易失效（Chromium/Firefox 都记录过
+        // 这个行为）。数据变化时把开关关掉再打开，强制它重新计算。
         changeCancellable = store.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
-                self?.applyDisplayModeIfNeeded()
-                self?.applyHotKeyIfNeeded()
+                guard let self else { return }
+                self.panel.isMovableByWindowBackground = false
+                self.panel.isMovableByWindowBackground = true
+                self.applyDisplayModeIfNeeded()
+                self.applyHotKeyIfNeeded()
             }
         }
 
@@ -164,6 +183,46 @@ public final class PanelController {
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - 手动窗口拖动（通道 1：事件监视器 + 直接挪窗口）
+
+    private func log(_ text: String) {
+        guard debugLog else { return }
+        FileHandle.standardError.write(Data(("[nvpeek drag] \(text)\n").utf8))
+    }
+
+    private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .leftMouseDown:
+            guard event.window === panel else {
+                log("mouseDown 在别的窗口（\(event.window.map { String($0.windowNumber) } ?? "nil"))")
+                return event
+            }
+            guard let content = panel.contentView else { return event }
+            let p = content.convert(event.locationInWindow, from: nil)
+            let inTopStrip = p.y >= content.bounds.height - 44
+            let inButtonZone = p.x >= content.bounds.width - 160
+            log("mouseDown p=\(p) 高=\(content.bounds.height) 条带=\(inTopStrip) 按钮区=\(inButtonZone)")
+            guard inTopStrip, !inButtonZone else { return event }
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartWindowOrigin = panel.frame.origin
+            return nil
+        case .leftMouseDragged:
+            guard dragStartMouse != nil, let startMouse = dragStartMouse,
+                  let origin = dragStartWindowOrigin else { return event }
+            let now = NSEvent.mouseLocation
+            panel.setFrameOrigin(NSPoint(x: origin.x + (now.x - startMouse.x),
+                                         y: origin.y + (now.y - startMouse.y)))
+            return nil
+        case .leftMouseUp:
+            guard dragStartMouse != nil else { return event }
+            dragStartMouse = nil
+            dragStartWindowOrigin = nil
+            return nil
+        default:
+            return event
+        }
     }
 
     /// 窗口高度跟随 SwiftUI 汇报的内容高度，左上角保持不动，且不出屏幕

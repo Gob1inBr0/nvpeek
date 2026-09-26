@@ -1,6 +1,20 @@
 import SwiftUI
 import AppKit
 
+/// SwiftUI 原生窗口拖动手势（macOS 15+）。它完全在 SwiftUI 层实现，
+/// 不经过 AppKit 会缓存"可拖动区域"的那套机制（本程序界面每几秒刷新一次，
+/// AppKit 的区域缓存经常失效——这正是各种标准修法都不灵的原因）。
+/// minimumDistance 保证单击按钮不受影响，拖动才触发。
+struct WindowDragModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.gesture(WindowDragGesture())
+        } else {
+            content
+        }
+    }
+}
+
 /// 把内容实际高度报告给窗口控制器，窗口高度跟着内容走
 struct PanelContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -38,6 +52,7 @@ public struct PanelView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
         .onPreferenceChange(PanelContentHeightKey.self) { onContentHeight($0) }
+        .modifier(WindowDragModifier())
         .contextMenu {
             Button(store.prefs.collapsed ? "展开" : "收起为迷你条") {
                 store.setCollapsed(!store.prefs.collapsed)
