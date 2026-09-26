@@ -8,27 +8,6 @@ final class NonActivatingPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
-/// 能拖动窗口的宿主视图。NSHostingView 会拦下鼠标事件，藏在它背后的把手视图
-/// 收不到按下事件；所以在它自己的 mouseDown 里分流：点在标题栏条带
-/// （右侧按钮区除外）就执行系统窗口拖动，其余位置照常交给 SwiftUI 处理。
-final class MovableHostingView: NSHostingView<PanelView> {
-    /// 标题栏条带高度（展开态标题行和迷你条都在窗口顶部）
-    private let dragStripHeight: CGFloat = 40
-    /// 右侧按钮区宽度，这个范围里不拖动，留给按钮点击
-    private let buttonZoneWidth: CGFloat = 150
-
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let inTopStrip = point.y >= bounds.height - dragStripHeight
-        let inButtonZone = point.x >= bounds.width - buttonZoneWidth
-        if inTopStrip && !inButtonZone, let window = window {
-            window.performDrag(with: event)
-        } else {
-            super.mouseDown(with: event)
-        }
-    }
-}
-
 @MainActor
 public final class PanelController {
     private let store: MonitorStore
@@ -70,23 +49,19 @@ public final class PanelController {
             onContentHeight: { [weak self] height in
                 self?.resizePanel(toContentHeight: height)
             })
-        let hosting = MovableHostingView(rootView: root)
+        let hosting = NSHostingView(rootView: root)
         panel.contentView = hosting
 
         // 拖动窗口：本地事件监视器在事件到达任何视图之前就能看到，
-        // 不依赖 SwiftUI 是否转发（实测 NSHostingView 会吞掉背后把手的事件）。
-        // 规则：按下位置在窗口顶部条带、且不在右侧按钮区 → 执行系统窗口拖动。
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self, event.window === self.panel,
-                  let content = self.panel.contentView else { return event }
-            let p = content.convert(event.locationInWindow, from: nil)
-            let inTopStrip = p.y >= content.bounds.height - 40
-            let inButtonZone = p.x >= content.bounds.width - 150
-            if inTopStrip && !inButtonZone {
-                self.panel.performDrag(with: event)
-                return nil   // 吃掉这个按下事件，避免 SwiftUI 又当点击处理
-            }
-            return event
+        // 不依赖 SwiftUI 转发（NSHostingView 会吞掉事件），也不依赖
+        // performDrag（在这个免激活面板上行为不可靠）。
+        // 原理：按下时记起点，拖动事件里用「当前鼠标位置 − 起点」直接挪窗口。
+        // 区域规则：窗口顶部 44 点条带内、且不在右侧 160 点按钮区 → 拖动。
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            guard let self else { return event }
+            return self.handleMouseEvent(event)
         }
 
         applyDisplayModeIfNeeded()
@@ -193,6 +168,41 @@ public final class PanelController {
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - 手动窗口拖动
+
+    /// 拖动起点：鼠标的全局位置和当时的窗口位置；为 nil 表示当前没有在拖
+    private var dragStartMouse: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
+
+    private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .leftMouseDown:
+            // 只有按下发生在本面板上才可能开始拖动
+            guard event.window === panel, let content = panel.contentView else { return event }
+            let p = content.convert(event.locationInWindow, from: nil)
+            let inTopStrip = p.y >= content.bounds.height - 44
+            let inButtonZone = p.x >= content.bounds.width - 160
+            guard inTopStrip, !inButtonZone else { return event }
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartWindowOrigin = panel.frame.origin
+            return nil   // 吃掉按下事件：标题栏区域没有可点的东西
+        case .leftMouseDragged:
+            guard dragStartMouse != nil, let startMouse = dragStartMouse,
+                  let origin = dragStartWindowOrigin else { return event }
+            let now = NSEvent.mouseLocation
+            panel.setFrameOrigin(NSPoint(x: origin.x + (now.x - startMouse.x),
+                                         y: origin.y + (now.y - startMouse.y)))
+            return nil   // 拖动中的事件不往视图里送
+        case .leftMouseUp:
+            guard dragStartMouse != nil else { return event }
+            dragStartMouse = nil
+            dragStartWindowOrigin = nil
+            return nil
+        default:
+            return event
+        }
     }
 
     /// 窗口高度跟随 SwiftUI 汇报的内容高度，左上角保持不动，且不出屏幕
