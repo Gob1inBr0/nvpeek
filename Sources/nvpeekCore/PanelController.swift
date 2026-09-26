@@ -171,7 +171,10 @@ public final class PanelController {
         switch mode {
         case .desktop:
             // 和系统桌面小组件同层：贴在壁纸上，被普通窗口自然遮挡
-            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)))
+            // 桌面图标层再抬高 1 级：Finder 的桌面窗口也在图标层，
+            // 同层时谁后露头谁在上，Finder 会把自己排前面、抢走所有点击；
+            // 高 1 级既点得到，仍然远在普通窗口之下、照样被工作窗口遮挡
+            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
             panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         case .floating:
             panel.level = .floating
